@@ -4,7 +4,6 @@ import "./App.css";
 import AddTaskIcon from "./assets/plus.svg";
 import EditIcon from "./assets/edit.svg";
 import RemoveIcon from "./assets/trash-2.svg";
-import StartTimerIcon from "./assets/clock.svg";
 import ValidateIcon from "./assets/check.svg";
 import XIcon from "./assets/x.svg";
 
@@ -12,21 +11,7 @@ function Task({ task, removeTask, updateTask, toggleCompleted }) {
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState(task.name);
   const [newDueDate, setNewDueDate] = useState(task.dueDate);
-  const [timer, setTimer] = useState(0);
-  const [isTiming, setIsTiming] = useState(false);
-
-  useEffect(() => {
-    let interval;
-    if (isTiming) {
-      interval = setInterval(() => {
-        setTimer((prevTimer) => prevTimer + 1);
-      }, 1000);
-    } else {
-      clearInterval(interval);
-    }
-    return () => clearInterval(interval);
-  }, [isTiming]);
-
+  
   const handleUpdate = () => {
     updateTask(task.id, newName, newDueDate);
     setIsEditing(false);
@@ -34,7 +19,10 @@ function Task({ task, removeTask, updateTask, toggleCompleted }) {
 
   const handleEdit = () => {
     setIsEditing(true);
-    setIsTiming(false);
+  };
+
+  const handleToggleCompleted = () => {
+    toggleCompleted(task.id);
   };
 
   return (
@@ -59,14 +47,6 @@ function Task({ task, removeTask, updateTask, toggleCompleted }) {
       </td>
       <td>{task.dueDate}</td>
       <td>
-        {timer > 0 && <span>Elapsed time: {timer} s</span>}
-        {!task.isCompleted && (
-          <button onClick={() => setIsTiming(!isTiming)}>
-            {isTiming ? "Stop" : <img src={StartTimerIcon} alt="timer" />}
-          </button>
-        )}
-      </td>
-      <td>
         {isEditing ? (
           <button onClick={handleUpdate}>
             <img src={EditIcon} alt="Update" />
@@ -80,7 +60,7 @@ function Task({ task, removeTask, updateTask, toggleCompleted }) {
         )}
       </td>
       <td>
-        <button onClick={toggleCompleted}>
+        <button onClick={handleToggleCompleted}>
           {task.isCompleted ? (
             <img src={XIcon} alt="Undo" />
           ) : (
@@ -117,6 +97,7 @@ function App() {
   );
   const [newTask, setNewTask] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [filter, setFilter] = useState("all");
 
   useEffect(() => {
     localStorage.setItem("tasks", JSON.stringify(tasks));
@@ -160,9 +141,25 @@ function App() {
     setTasks(updatedTasks);
   };
 
+  let displayedTasks = tasks;
+  if (filter === "completed") {
+    displayedTasks = tasks.filter(task => task.isCompleted);
+  } else if (filter === "notCompleted") {
+    displayedTasks = tasks.filter(task => !task.isCompleted);
+  }
+
+
   return (
     <div className="App">
       <h1>To-Do List</h1>
+
+      {/* Sélecteur de filtre */}
+      <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+        <option value="all">All tasks</option>
+        <option value="completed">Completed tasks</option>
+        <option value="notCompleted">Not completed tasks</option>
+      </select>
+
       <input
         type="text"
         placeholder="New task..."
@@ -177,20 +174,20 @@ function App() {
       <button onClick={addTask}>
         <img src={AddTaskIcon} alt="Add" />
       </button>
-      {tasks.length > 0 && (
+
+      {displayedTasks.length > 0 && (
         <table>
           <thead>
             <tr>
               <th>Task Name</th>
               <th>Due Date</th>
-              <th>Timer</th>
               <th>Edit</th>
               <th>Complete</th>
               <th>Delete</th>
             </tr>
           </thead>
           <tbody>
-            {tasks.map((task) => (
+            {displayedTasks.map((task) => (
               <Task
                 key={task.id}
                 task={task}
