@@ -1,144 +1,81 @@
 import { useState, useEffect } from "react";
-import PropTypes from "prop-types";
-import "./App.css";
+import { onAuthStateChanged } from './config/firebase';
+import Auth from './components/Auth.jsx';
+import Task from './components/Task.jsx';
 import AddTaskIcon from "./assets/plus.svg";
-import EditIcon from "./assets/edit.svg";
-import RemoveIcon from "./assets/trash-2.svg";
-import ValidateIcon from "./assets/check.svg";
-import XIcon from "./assets/x.svg";
-
-function Task({ task, removeTask, updateTask, toggleCompleted }) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [newName, setNewName] = useState(task.name);
-  const [newDueDate, setNewDueDate] = useState(task.dueDate);
-  
-  const handleUpdate = () => {
-    updateTask(task.id, newName, newDueDate);
-    setIsEditing(false);
-  };
-
-  const handleEdit = () => {
-    setIsEditing(true);
-  };
-
-  const handleToggleCompleted = () => {
-    toggleCompleted(task.id);
-  };
-
-  return (
-    <tr className={task.isCompleted ? "completed" : ""}>
-      <td>
-        {isEditing ? (
-          <>
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-            />
-            <input
-              type="date"
-              value={newDueDate}
-              onChange={(e) => setNewDueDate(e.target.value)}
-            />
-          </>
-        ) : (
-          task.name
-        )}
-      </td>
-      <td>{task.dueDate}</td>
-      <td>
-        {isEditing ? (
-          <button onClick={handleUpdate}>
-            <img src={EditIcon} alt="Update" />
-          </button>
-        ) : (
-          !task.isCompleted && (
-            <button onClick={handleEdit}>
-              <img src={EditIcon} alt="Edit" />
-            </button>
-          )
-        )}
-      </td>
-      <td>
-        <button onClick={handleToggleCompleted}>
-          {task.isCompleted ? (
-            <img src={XIcon} alt="Undo" />
-          ) : (
-            <img src={ValidateIcon} alt="Complete" />
-          )}
-        </button>
-      </td>
-      <td>
-        {!task.isCompleted && (
-          <button onClick={() => removeTask(task.id)}>
-            <img src={RemoveIcon} alt="Delete" />
-          </button>
-        )}
-      </td>
-    </tr>
-  );
-}
-
-Task.propTypes = {
-  task: PropTypes.shape({
-    id: PropTypes.string.isRequired,
-    name: PropTypes.string.isRequired,
-    isCompleted: PropTypes.bool.isRequired,
-    dueDate: PropTypes.string,
-  }).isRequired,
-  removeTask: PropTypes.func.isRequired,
-  updateTask: PropTypes.func.isRequired,
-  toggleCompleted: PropTypes.func.isRequired,
-};
+import { ref, set, onValue, remove, update, push  } from 'firebase/database';
+import { db,auth, signOut } from './config/firebase';
+import "./styles/App.css";
 
 function App() {
-  const [tasks, setTasks] = useState(
-    JSON.parse(localStorage.getItem("tasks")) || []
-  );
+  const [user, setUser] = useState(null);
+  const [tasks, setTasks] = useState([]);
   const [newTask, setNewTask] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [filter, setFilter] = useState("all");
 
   useEffect(() => {
-    localStorage.setItem("tasks", JSON.stringify(tasks));
-  }, [tasks]);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      const tasksRef = ref(db, `tasks/${user.uid}`);
+      const unsubscribe = onValue(tasksRef, (snapshot) => {
+        const firebaseTasks = snapshot.val();
+        const tasksArray = firebaseTasks ? Object.keys(firebaseTasks).map(key => ({ ...firebaseTasks[key], id: key })) : [];
+        setTasks(tasksArray);
+      });
+
+      return () => unsubscribe();
+    }
+  }, [user]);
 
   const addTask = () => {
-    if (newTask.trim() === "") return;
+    if (newTask.trim() === "" || !user) return;
 
     const today = new Date().toISOString().split("T")[0];
 
     const newTaskObject = {
-      id: new Date().toISOString(),
       name: newTask.trim(),
       isCompleted: false,
       dueDate: dueDate || today,
     };
 
-    setTasks([...tasks, newTaskObject]);
+    const tasksRef = ref(db, `tasks/${user.uid}`);
+    const newTaskRef = push(tasksRef);
+    set(newTaskRef, newTaskObject);
+
     setNewTask("");
     setDueDate("");
   };
 
   const removeTask = (taskId) => {
-    const filteredTasks = tasks.filter((task) => task.id !== taskId);
-    setTasks(filteredTasks);
+    const taskRef = ref(db, `tasks/${user.uid}/${taskId}`);
+    remove(taskRef);
   };
 
   const updateTask = (taskId, newName, newDueDate) => {
-    const updatedTasks = tasks.map((task) =>
-      task.id === taskId
-        ? { ...task, name: newName, dueDate: newDueDate }
-        : task
-    );
-    setTasks(updatedTasks);
+    const taskRef = ref(db, `tasks/${user.uid}/${taskId}`);
+    update(taskRef, { name: newName, dueDate: newDueDate });
   };
 
   const toggleCompleted = (taskId) => {
-    const updatedTasks = tasks.map((task) =>
-      task.id === taskId ? { ...task, isCompleted: !task.isCompleted } : task
-    );
-    setTasks(updatedTasks);
+    const task = tasks.find(t => t.id === taskId);
+    const taskRef = ref(db, `tasks/${user.uid}/${taskId}`);
+    update(taskRef, { isCompleted: !task.isCompleted });
+  };
+
+  const handleSignOut = async () => {
+    try {
+        await signOut(auth);
+    } catch (err) {
+        console.error("Erreur lors de la déconnexion :", err.message);
+    }
   };
 
   let displayedTasks = tasks;
@@ -148,12 +85,16 @@ function App() {
     displayedTasks = tasks.filter(task => !task.isCompleted);
   }
 
+  if (!user) return <Auth />;
 
   return (
     <div className="App">
-      <h1>To-Do List</h1>
-
-      {/* Sélecteur de filtre */}
+ <header>
+    <h1>To-Do List</h1>
+    {user && (
+      <button onClick={handleSignOut}>Se déconnecter</button>
+    )}
+  </header>
       <select value={filter} onChange={(e) => setFilter(e.target.value)}>
         <option value="all">All tasks</option>
         <option value="completed">Completed tasks</option>
